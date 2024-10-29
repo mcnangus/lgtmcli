@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
 set -eu -o pipefail
 
-# what is the relative path here
-url="$(python3 "./lgtm.py")"
+python3 "./lgtm.py" "$@"
