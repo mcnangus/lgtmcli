@@ -11,16 +11,21 @@ class GHApi:
     def __init__(self):
         # TODO load in bash script???
         remote=subprocess.check_output(['git', 'config', '--get', 'remote.origin.url']).decode('utf-8').strip()
-        baseurl=subprocess.check_output(['dirname', remote]).decode('utf-8').strip()
         if 'git@github.com' in remote:
-            self.org=baseurl.split(':')[1]
+            parts=remote.split(':')[1].split('/')
+            self.org=parts[0]
+            self.repo=parts[1].split('.')[0]
+        elif 'https://github.com' in remote:
+            parts=remote.split('/')
+            self.org=parts[3]
+            self.repo=parts[4].split('.')[0]
         else:
-            self.org=subprocess.check_output(['basename', baseurl]).decode('utf-8').strip()
-        self.repo=subprocess.check_output(['basename', '-s', '.git', remote]).decode('utf-8').strip()
+            raise Exception('Cannot parse `git config --get remote.origin.url`')
 
     def gh_api(self, path: str, method='GET', *args):
         return subprocess.check_output([
-            'gh', 'api', '--method', method,
+            'gh', 'api',
+            '--method', method,
             *self.headers,
             f'/repos/{self.org}/{self.repo}/'+path,
             *args,
@@ -29,7 +34,7 @@ class GHApi:
 
 def main():
     # parse the arguments
-    parser = argparse.ArgumentParser(description='Tool for viewing/editing/creating pull request comments')
+    parser = argparse.ArgumentParser(description='Tool for viewing/editing/creating pull request comments and approving')
     parser.add_argument('-p', '--pr', type=int, help='The number of the pull request to open')
     parser.add_argument('-F', '--file', type=str, help='(optional) The path to a specific file for action (e.g., path/to/file.md)')
     parser.add_argument('-l', '--line', type=str, help='(optional) Starting line of file for action')
@@ -38,6 +43,7 @@ def main():
     parser.add_argument('-c', '--comment', type=str, help='Action: Rich text comment')
     parser.add_argument('-v', '--view', default=False, help='Action: View only mode', action=argparse.BooleanOptionalAction)
     parser.add_argument('-e', '--edit', default=False, help='Action: Edit mode', action=argparse.BooleanOptionalAction)
+    parser.add_argument('-a', '--approve', default=False, help='Action: Approve mode', action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
 
@@ -53,32 +59,43 @@ def main():
             return
 
 
-    # ensure one of view, edit, or comment is set
+    # ensure one of view, edit, approve, approve and comment, or comment is set
     if args.view:
         if args.comment != None:
             raise Exception('Cannot set both view and comment.')
         if args.edit:
             raise Exception('Cannot set both view and edit modes.')
+        if args.approve:
+            raise Exception('Cannot set both view and approve modes.')
         print('Entered view only mode...')
     elif args.edit:
         if args.comment != None:
             raise Exception('Cannot set both edit and comment.')
+        if args.approve:
+            raise Exception('Cannot set both edit and approve modes.')
         print('Entered edit mode...')
+    elif args.approve:
+        if args.comment == None:
+            try:
+                subprocess.check_output(['gh', 'pr', 'review', str(args.pr), '--approve'])
+            except:
+                return
+        else:
+            try:
+                subprocess.check_output(['gh', 'pr', 'review', str(args.pr), '--approve', '--body', args.comment])
+            except:
+                return
+        return
     elif args.comment == None:
-        raise Exception("Error: No mode (view/edit/comment) provided.")
+        raise Exception("Error: No mode (view/edit/approve/comment) provided.")
 
 
-    # load the org, repo, head
+    # load the org and repo for gh api calls
     api = GHApi()
-    # TODO this is the wrong HEAD for the pull request if not on the branch
-    # (options) auto switch to correct branch (and return back afterwards)
-    # (options) get the head from gh cli calls if not in the correct branch
-    # (options) always use the lookup latest commit on the branch the the pull request is on
-    head=subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
 
 
-    # pull request level comments (no threads here)
     if args.file == None:
+        # pull request level comments (no threads here)
         if args.line != None:
             raise Exception("No file path provided but line number provided, exiting...")
 
@@ -119,7 +136,9 @@ def main():
         subprocess.check_output(['gh', 'pr', 'comment', str(args.pr), '--body', args.comment]).decode('utf-8').strip()
         return
 
-    # TODO resolve file / file and line level comments???
+
+    # TODO resolve file / file and line level review comments???
+
 
     pr_file_comments = json.loads(api.gh_api(f'pulls/{args.pr}/comments'))
     pr_file_comments = [comment for comment in pr_file_comments if comment['path'] == args.file]
@@ -164,6 +183,7 @@ def main():
             if input("Create new thread? (Y/n): ") not in ['Y', 'y']:
                 return
 
+        head=json.loads(api.gh_api(f'pulls/{args.pr}'))['head']['sha']
         api.gh_api(
             f'pulls/{args.pr}/comments',
             'POST',
@@ -174,11 +194,9 @@ def main():
             '-f', "subject_type=file",
         )
         return
-
-    # TODO multiline, eg. --multiline 5-12 OR --multiline 5:12
-    # '-F', "start_line=1", '-f', "start_side=RIGHT"
-
     else:
+        # TODO multiline, eg. --multiline 5-12 OR --multiline 5:12
+            # '-F', "start_line=1", '-f', "start_side=RIGHT"
         # pull request file AND line level comments
         pr_file_and_line_comments = [comment for comment in pr_file_comments if 'line' in comment and str(comment['line']) == args.line]
 
@@ -220,6 +238,7 @@ def main():
             if input("Create new thread? (Y/n): ") not in ['Y', 'y']:
                 return
 
+        head=json.loads(api.gh_api(f'pulls/{args.pr}'))['head']['sha']
         api.gh_api(
             f'pulls/{args.pr}/comments',
             'POST',
@@ -235,7 +254,7 @@ def main():
     # TODO interactive editor for commenting
 
     # TODO review changes
-    # Wait for the user to save and exit the
+        # Wait for the user to save and exit the
 
     # TODO handle response, eg. success, error, etc.
 
