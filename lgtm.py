@@ -174,7 +174,7 @@ def main():
 
             if input("Continue the existing thread? (Y/n): ") in ['Y', 'y']:
                 api.gh_api(
-                    f'pulls/{args.pr}/comments/{latest_comment['id']}/replies',
+                    f'pulls/{args.pr}/comments/{latest_comment["id"]}/replies',
                     'POST',
                     '-f' f"body={args.comment}"
                 )
@@ -229,7 +229,7 @@ def main():
 
             if input("Continue the existing thread? (Y/n): ") in ['Y', 'y']:
                 api.gh_api(
-                    f'pulls/{args.pr}/comments/{latest_comment['id']}/replies',
+                    f'pulls/{args.pr}/comments/{latest_comment["id"]}/replies',
                     'POST',
                     '-f' f"body={args.comment}"
                 )
